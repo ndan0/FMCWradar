@@ -12,13 +12,13 @@
 %                           col 2: kr
 
 function detects = cfar_detection(image, Pfa, window)
-    if (or(mod(window(1), 2) == 1, mod(window(2), 2) == 1) )
+    if (or(mod(window(1), 2) == 0, mod(window(2), 2) == 0) )
         error('window size must be odd');
     end
 
     threshold = prod(window) *(Pfa^(-1/(prod(window))) -1);
     
-    filt = ones(size_window)/(prod(window)-1);
+    filt = ones(window)/(prod(window)-1);
     filt((window(1)+1)/2, (window(2)+1)/2) = 0;
 
     if (0)
@@ -37,7 +37,7 @@ function detects = cfar_detection(image, Pfa, window)
 
         for r = 1:size(image,1)
             for c = 1:size(image,2)
-                U = sum(sum(padded_image(r:r+window(1)-1, c:c+window(2)-1) .* filt));
+                U = sum(padded_image(r:r+window(1)-1, c:c+window(2)-1) .* filt, "all");
                 if (image(r,c) > threshold*U)
                     detects = [detects; r, c];
                     padded_image(r+r_offset, c+c_offset) = U; % "condB" if pixel is a detect, use it's noise estimate to calculate U for other pixels
