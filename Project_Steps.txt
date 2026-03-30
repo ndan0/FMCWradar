@@ -18,9 +18,9 @@ Documenting the paper requirements in steps/chunks.
     - Generate noise estimate U(x,y) from Z
     - Determine threshold T
     - Produce indices [kv, kr] of detects
+    https://ieeexplore.ieee.org/document/7411913
 
 4. Estimate AOA for each detect
     - Does this only give us angle in the horizontal dimension?
-    - Is there a way to get the angle of the vertical dimension?
 
 5. Generate PCM using AOA, Range, and Velocity

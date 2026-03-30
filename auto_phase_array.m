@@ -6,6 +6,7 @@ fc = 77e9;
 c = physconst('LightSpeed'); % 299792458 m/s
 lambda = c/fc; % meters, wavelength of signal
 
+% TODO: what should our max range and res be?
 range_max = 200; % meters, depends on situation. 200m is for cruise control driving situation.
 T = 5.5*range2time(range_max,c); % sec, sweep time. scale should be between 5-6x
 % T = 5.5*range_max*c/2;
@@ -36,7 +37,7 @@ if (debug_plot)
 end
 
 %% Setup target
-target_dist = [43 50]; % meters
+target_dist = [43 50]; % meters         % TODO: what should be targets be?
 target_speed = [-80 96]*1000/3600; % meters/sec
 target_az = [-10 10];
 target_rcs = [20 40]; % radar cross section
@@ -54,7 +55,7 @@ tx_gain = 9+ant_gain; % dB
 rx_gain = 15+ant_gain; % dB
 rx_nf = 4.5; % dB
 
-Nt = 2; % num tx
+Nt = 2; % num tx        % TODO: should we implement the 9x16 array in the paper?
 Nr = 4; % num rx
 
 dt = Nr*lambda/2; % meters, tx spacing (half wavelength)
@@ -151,10 +152,10 @@ clf;
 plotResponse(rngdopresp, squeeze(xrv(:,1,:)));
 
 %% Sum the magnitude of response
-mag_resp = resp(nfft_r/2+1:end, :,:);
+mag_resp = abs(resp(nfft_r/2+1:end, :,:)).^2;
 Z = reshape(sum(mag_resp, 2), [nfft_r/2, nfft_d]);
 
 %% Detection
 Pfa = 0.001;
-window = [7, 3];
-detects = cfar_detection(Z, Pfa, window);
+window = [7, 3]; % FIXME: what size?
+detects = cfar_detection(Z, Pfa, window); % FIXME: change this to Lila's cfar_detection_paper() function
