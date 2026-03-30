@@ -1,0 +1,26 @@
+Documenting the paper requirements in steps/chunks.
+
+1. Simulating a data set:
+    - generate a truth pulse, send as a chirp train
+    - set target(s) position/velocity
+    - simulate receiver data
+    - synthesize virtual receiver antennas (can we simulate these directly?)
+    https://www.mathworks.com/help/phased/ug/increasing-angular-resolution-with-mimo-radars.html
+    https://www.mathworks.com/help/radar/ug/automotive-adaptive-cruise-control-using-fmcw-technology.html
+
+2. Generate 2D range-Doppler Map (this may be covered by the Matlab tutorial above)
+    - mix received signals into IF for each Rx
+    - design LPF for mixed signal
+    - compute DFTs for X[kr, m] and Y[kv, kr]
+    - compute "fused" RDM Z[kv, kr]
+
+3. Implement 2D CFAR
+    - Generate noise estimate U(x,y) from Z
+    - Determine threshold T
+    - Produce indices [kv, kr] of detects
+
+4. Estimate AOA for each detect
+    - Does this only give us angle in the horizontal dimension?
+    - Is there a way to get the angle of the vertical dimension?
+
+5. Generate PCM using AOA, Range, and Velocity
