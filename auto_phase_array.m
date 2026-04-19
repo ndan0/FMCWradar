@@ -1,6 +1,6 @@
 % This script will borrow the info from https://www.mathworks.com/help/radar/ug/automotive-adaptive-cruise-control-using-fmcw-technology.html
 % to create a phase array.
-debug_plot = 1;
+debug_plot = 0;
 
 fc = 77e9;
 c = physconst('LightSpeed'); % 299792458 m/s
@@ -38,8 +38,8 @@ end
 
 %% Setup target
 target_dist = [43 50]; % meters         % TODO: what should be targets be?
-target_speed = [-80 96]*1000/3600; % meters/sec
-target_az = [-10 10];
+target_speed = [-80 96]*1000/3600; % meters/sec (note, simulation also sets radar to have a speed)
+target_az = [-10 10]; % Azimuth angle in degrees
 target_rcs = [20 40]; % radar cross section
 target_pos = [target_dist.*cosd(target_az); target_dist.*sind(target_az); 0.5 0.5];
 target = phased.RadarTarget('MeanRCS', target_rcs, 'PropagationSpeed', c, 'OperatingFrequency', fc);
@@ -47,6 +47,9 @@ target_motion = phased.Platform('InitialPosition', target_pos, 'Velocity', [targ
 
 channel = phased.FreeSpace('PropagationSpeed', c, 'OperatingFrequency', fc, 'SampleRate', fs, 'TwoWayPropagation', true);
 
+for i = 1:length(target_dist)
+    fprintf(1, "Target %d at range %f, abs vel %f, relative az %f degrees, rcs %f\n", i, target_dist(i), target_speed(i), target_az(i), target_rcs(i));
+end
 %% Setup Radar System
 ant_aperture = 6.06e-4; % square meters
 ant_gain = aperture2gain(ant_aperture, lambda); % dB
@@ -74,6 +77,7 @@ rxcollector = phased.Collector('Sensor', rxarray, 'OperatingFrequency', fc, 'Pro
 radar_speed = 100*1000/3600; % meters/sec, assuming radar is also in motion
 radarmotion = phased.Platform('InitialPosition', [0;0;0.5], 'Velocity', [radar_speed;0;0]);
 
+fprintf(1, "Radar with %d Tx, %d Rx, %d Virtual, abs vel %f\n", Nt, Nr, Nt*Nr, radar_speed);
 %% Simulation
 if (debug_plot)
     specanalyzer = spectrumAnalyzer('SampleRate',fs, ...
@@ -85,10 +89,11 @@ end
 rng(11);
 Dn = 2; % Decimation factor
 fs = fs/Dn;
-Nsweep = 64;
+Nsweep = 64/2*Nt;
 xr = complex(zeros(fs*waveform.SweepTime,Nr, Nsweep));
 
-w0 = [0;1]; % weights to enable/disable radiating elements
+w0 = zeros(Nt,1); % weights to enable/disable radiating elements
+w0(Nt) = 1;
 
 for m = 1:Nsweep
     % Update radar and target positions
@@ -101,7 +106,7 @@ for m = 1:Nsweep
     txsig = transmitter(sig);
 
     % Toggle transmit element
-    w0 = 1-w0;
+    w0 = [w0(Nt); w0(1:Nt-1)];
     txsig = txradiator(txsig, target_ang, w0);
 
     % Propagate the signal and reflect off the target
@@ -126,8 +131,8 @@ for m = 1:Nsweep
 end
 
 %% Virtual Array processing
-xr1 = xr(:,:,1:2:end); % taking every other page to recover the measurements corresponding to the two transmit antenna elements
-xr2 = xr(:,:,2:2:end);
+xr1 = xr(:,:,1:Nt:end); % taking every other page to recover the measurements corresponding to the two transmit antenna elements
+xr2 = xr(:,:,2:Nt:end); % When Nt > 2, we still toggle 1 receiver per sweep
 
 xrv = cat(2,xr1, xr2); % Xrv size is [num range bins (positive only), num virtual rx, num vel bins];
 
@@ -145,17 +150,50 @@ rngdopresp = phased.RangeDopplerResponse('PropagationSpeed',c,...
     'DopplerWindow', 'Hann');
 
 [resp, r, sp] = rngdopresp(xrv);    % resp
-                                    % r: range values of resp bins dim 1 (includes 
+                                    % r: range values of resp bins dim 1
                                     % sp: velocity values of resp bins dim 3
 
-clf;
-plotResponse(rngdopresp, squeeze(xrv(:,1,:)));
+if (debug_plot)
+    clf;
+    plotResponse(rngdopresp, squeeze(xrv(:,1,:)));
+end
 
 %% Sum the magnitude of response
-mag_resp = abs(resp(nfft_r/2+1:end, :,:)).^2;
+mag_resp = abs(resp(nfft_r/2+1:end, :,:)).^2; % Dump the negative range bins, sum the virtual receivers along dim 2
 Z = reshape(sum(mag_resp, 2), [nfft_r/2, nfft_d]);
+r = r(nfft_r/2+1:end); % Dumped negative range bins, is now positive range values of bins of Z
+
+% colormap('winter');
+% figure(), imagesc(sp, r, Z);
+% colorbar;
+% title('Magnitude of response');
+% xlabel('velocity (m/s)');
+% ylabel('range (m)');
 
 %% Detection
-Pfa = 0.001;
-window = [7, 3]; % FIXME: what size?
-detects = cfar_detection(Z, Pfa, window); % FIXME: change this to Lila's cfar_detection_paper() function
+%Pfa = 0.001;
+window = [5, 3]; % CHECKME: what size? the resolution of resp bins is not the same as our input range_res from the start. (it's closer to half of range_res)
+                 % If we window 5 range bins, do we actually have 1 m resolution?
+%detects = cfar_detection(Z, Pfa, window); % Deprecated cfar detector function
+Tscale = 3.5;
+[detects, detMask, Umap, Smap] = cfar_detection_paper(Z, Tscale, window);
+
+
+%% Determine AOA of detects
+num_dets = size(detects, 1);
+fprintf(1, "Detected %d range/vel combinations\n", num_dets);
+ktheta = [(0:Nt*Nr/2-1) -Nt*Nr/2:-1]/(Nt*Nr)*2*pi; % Angle of each index in Pi
+for i = 1:num_dets
+    this_range_idx = detects(i,1);
+    this_vel_idx = detects(i,2);
+    fprintf(1, "Detect %d at range %f and relative vel %f\n", i, r(this_range_idx), sp(this_vel_idx));
+    
+    % Extract sequence Y
+    Y = resp(nfft_r/2 + this_range_idx,:,this_vel_idx); % Range-doppler map values for this detect at each virtual receiver
+    
+    % Use DFT to determine angle information
+    Pi = fft(Y);
+    % How to determine the angle?
+    [~, max_angle_idx] = max(Pi);
+    fprintf(1, "Found angle of %f\n", 180/pi*ktheta(max_angle_idx))
+end
