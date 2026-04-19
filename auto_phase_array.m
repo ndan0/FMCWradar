@@ -62,7 +62,7 @@ Nt = 4; % num tx        % TODO: should we implement the 9x16 array in the paper?
 Nr = 8; % num rx
 
 dt = Nr*lambda/2; % meters, tx spacing (half wavelength)
-dr = lambda/Nt; % meters, rx spacing
+dr = lambda/2; % meters, rx spacing
 
 txarray = phased.ULA(Nt, dt);
 rxarray = phased.ULA(Nr, dr);
