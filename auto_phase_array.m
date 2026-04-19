@@ -78,6 +78,9 @@ radar_speed = 100*1000/3600; % meters/sec, assuming radar is also in motion
 radarmotion = phased.Platform('InitialPosition', [0;0;0.5], 'Velocity', [radar_speed;0;0]);
 
 fprintf(1, "Radar with %d Tx, %d Rx, %d Virtual, abs vel %f\n", Nt, Nr, Nt*Nr, radar_speed);
+% Generate "Truth" target matrix
+truth_targets = [target_dist.' (radar_speed - target_speed).' target_az.'];
+
 %% Simulation
 if (debug_plot)
     specanalyzer = spectrumAnalyzer('SampleRate',fs, ...
@@ -133,8 +136,11 @@ end
 %% Virtual Array processing
 xr1 = xr(:,:,1:Nt:end); % taking every other page to recover the measurements corresponding to the two transmit antenna elements
 xr2 = xr(:,:,2:Nt:end); % When Nt > 2, we still toggle 1 receiver per sweep
+%xr3 = xr(:,:,3:Nt:end); % Note: Need to go up to xr<Nt>
+%xr4 = xr(:,:,4:Nt:end);
 
-xrv = cat(2,xr1, xr2); % Xrv size is [num range bins (positive only), num virtual rx, num vel bins];
+xrv = cat(2,xr1, xr2);
+%xrv = cat(2,xr1, xr2, xr3, xr4); % Xrv size is [num range bins (positive only), num virtual rx, num vel bins];
 
 %% Range and Doppler Estimation
 nfft_r = 2^nextpow2(size(xrv,1));
@@ -154,7 +160,7 @@ rngdopresp = phased.RangeDopplerResponse('PropagationSpeed',c,...
                                     % sp: velocity values of resp bins dim 3
 
 if (debug_plot)
-    clf;
+    figure();
     plotResponse(rngdopresp, squeeze(xrv(:,1,:)));
 end
 
@@ -181,6 +187,7 @@ Tscale = 3.5;
 
 %% Determine AOA of detects
 num_dets = size(detects, 1);
+detected_targets = zeros(num_dets,3);
 fprintf(1, "Detected %d range/vel combinations\n", num_dets);
 ktheta = [(0:Nt*Nr/2-1) -Nt*Nr/2:-1]/(Nt*Nr)*2*pi; % Angle of each index in Pi
 for i = 1:num_dets
@@ -196,4 +203,11 @@ for i = 1:num_dets
     % How to determine the angle?
     [~, max_angle_idx] = max(Pi);
     fprintf(1, "Found angle of %f\n", 180/pi*ktheta(max_angle_idx))
+
+    detected_targets(i,1) = r(this_range_idx);
+    detected_targets(i,2) = sp(this_vel_idx);
+    detected_targets(i,3) = 180/pi*ktheta(max_angle_idx);
 end
+
+%% Generate PCM using detected_targets and truth_targets
+% my_pcm(truth_targets, detected_targets);
