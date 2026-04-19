@@ -58,11 +58,11 @@ tx_gain = 9+ant_gain; % dB
 rx_gain = 15+ant_gain; % dB
 rx_nf = 4.5; % dB
 
-Nt = 2; % num tx        % TODO: should we implement the 9x16 array in the paper?
-Nr = 4; % num rx
+Nt = 4; % num tx        % TODO: should we implement the 9x16 array in the paper?
+Nr = 8; % num rx
 
 dt = Nr*lambda/2; % meters, tx spacing (half wavelength)
-dr = lambda/2; % meters, rx spacing
+dr = lambda/Nt; % meters, rx spacing
 
 txarray = phased.ULA(Nt, dt);
 rxarray = phased.ULA(Nr, dr);
@@ -108,7 +108,7 @@ for m = 1:Nsweep
     sig = waveform();
     txsig = transmitter(sig);
 
-    % Toggle transmit element
+    % Toggle transmit element with TDMA
     w0 = [w0(Nt); w0(1:Nt-1)];
     txsig = txradiator(txsig, target_ang, w0);
 
@@ -136,11 +136,10 @@ end
 %% Virtual Array processing
 xr1 = xr(:,:,1:Nt:end); % taking every other page to recover the measurements corresponding to the two transmit antenna elements
 xr2 = xr(:,:,2:Nt:end); % When Nt > 2, we still toggle 1 receiver per sweep
-%xr3 = xr(:,:,3:Nt:end); % Note: Need to go up to xr<Nt>
-%xr4 = xr(:,:,4:Nt:end);
+xr3 = xr(:,:,3:Nt:end); % Note: Need to go up to xr<Nt>
+xr4 = xr(:,:,4:Nt:end);
 
-xrv = cat(2,xr1, xr2);
-%xrv = cat(2,xr1, xr2, xr3, xr4); % Xrv size is [num range bins (positive only), num virtual rx, num vel bins];
+xrv = cat(2,xr1, xr2, xr3, xr4); % Xrv size is [num range bins (positive only), num virtual rx, num vel bins];
 
 %% Range and Doppler Estimation
 nfft_r = 2^nextpow2(size(xrv,1));
@@ -158,7 +157,7 @@ rngdopresp = phased.RangeDopplerResponse('PropagationSpeed',c,...
 [resp, r, sp] = rngdopresp(xrv);    % resp
                                     % r: range values of resp bins dim 1
                                     % sp: velocity values of resp bins dim 3
-
+% FIXME: the maximum velocity is too low, and target1's velocity is aliasing from 50m/s to -16m/s
 if (debug_plot)
     figure();
     plotResponse(rngdopresp, squeeze(xrv(:,1,:)));
@@ -201,6 +200,7 @@ for i = 1:num_dets
     % Use DFT to determine angle information
     Pi = fft(Y);
     % How to determine the angle?
+    % TODO: Make this a peak finder, what if we have two targets at the same range but different az?
     [~, max_angle_idx] = max(Pi);
     fprintf(1, "Found angle of %f\n", 180/pi*ktheta(max_angle_idx))
 
