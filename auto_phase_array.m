@@ -8,7 +8,7 @@ lambda = c/fc; % meters, wavelength of signal
 
 % TODO: what should our max range and res be?
 range_max = 200; % meters, depends on situation. 200m is for cruise control driving situation.
-T = 5.5*range2time(range_max,c); % sec, sweep time. scale should be between 5-6x
+T = 5*range2time(range_max,c); % sec, sweep time. scale should be between 5-6x
 % T = 5.5*range_max*c/2;
 
 range_res = 1; % meters, desired range resolution. 1 for cruise control driving situation.
@@ -37,7 +37,7 @@ if (debug_plot)
 end
 
 %% Setup target
-target_dist = [43 50]; % meters         % TODO: what should be targets be?
+target_dist = [20 50]; % meters         % TODO: what should be targets be?
 target_speed = [-80 96]*1000/3600; % meters/sec (note, simulation also sets radar to have a speed)
 target_az = [-10 10]; % Azimuth angle in degrees
 target_rcs = [20 40]; % radar cross section
@@ -48,7 +48,8 @@ target_motion = phased.Platform('InitialPosition', target_pos, 'Velocity', [targ
 channel = phased.FreeSpace('PropagationSpeed', c, 'OperatingFrequency', fc, 'SampleRate', fs, 'TwoWayPropagation', true);
 
 for i = 1:length(target_dist)
-    fprintf(1, "Target %d at range %f, abs vel %f, relative az %f degrees, rcs %f\n", i, target_dist(i), target_speed(i), target_az(i), target_rcs(i));
+    fprintf(1, "Target %d at range %f, abs vel %f, relative az %f degrees, rcs %f\n", ...
+        i, target_dist(i), target_speed(i), target_az(i), target_rcs(i));
 end
 %% Setup Radar System
 ant_aperture = 6.06e-4; % square meters
@@ -58,8 +59,8 @@ tx_gain = 9+ant_gain; % dB
 rx_gain = 15+ant_gain; % dB
 rx_nf = 4.5; % dB
 
-Nt = 2; % num tx        % TODO: should we implement the 9x16 array in the paper?
-Nr = 4; % num rx
+Nt = 9; % num tx        % TODO: should we implement the 9x16 array in the paper?
+Nr = 16; % num rx
 
 dt = Nr*lambda/2; % meters, tx spacing (half wavelength)
 dr = lambda/2; % meters, rx spacing
@@ -186,6 +187,7 @@ Tscale = 3.5;
 
 
 %% Determine AOA of detects
+Nrx = Nt * Nr; % Total number of virtual channels
 num_dets = size(detects, 1);
 detected_targets = zeros(num_dets,3);
 fprintf(1, "Detected %d range/vel combinations\n", num_dets);
@@ -193,21 +195,47 @@ ktheta = [(0:Nt*Nr/2-1) -Nt*Nr/2:-1]/(Nt*Nr)*2*pi; % Angle of each index in Pi
 for i = 1:num_dets
     this_range_idx = detects(i,1);
     this_vel_idx = detects(i,2);
-    fprintf(1, "Detect %d at range %f and relative vel %f\n", i, r(this_range_idx), sp(this_vel_idx));
-    
+
     % Extract sequence Y
     Y = resp(nfft_r/2 + this_range_idx,:,this_vel_idx); % Range-doppler map values for this detect at each virtual receiver
     
     % Use DFT to determine angle information
-    Pi = fft(Y);
-    % How to determine the angle?
-    [~, max_angle_idx] = max(Pi);
-    fprintf(1, "Found angle of %f\n", 180/pi*ktheta(max_angle_idx))
+    Pi = fft(Y, Nrx);
+    [~, max_angle_idx] = max(abs(Pi));
 
+    if max_angle_idx > Nrx/2
+        k_norm = (max_angle_idx - 1 - Nrx) / Nrx;
+    else
+        k_norm = (max_angle_idx - 1) / Nrx;
+    end
+
+    %Flip the sign
+    k_norm = -k_norm;
+
+    % Calculate Angle using the Inverse Sine
+    % Formula: theta = asin( f_theta * lambda / dr )
+    % Since k_norm represents (d/lambda * sin(theta)), we divide by (d/lambda)
+    val_to_asin = k_norm / (dr / lambda);
+
+    val_to_asin = max(min(val_to_asin, 1), -1); 
+
+    angle_rad = asin(val_to_asin);
+    angle_deg = rad2deg(angle_rad);
+    
+    v_rel = sp(this_vel_idx);
+    v_target_abs = (v_rel + radar_speed * cos(angle_rad)) / cos(angle_rad);
+    fprintf(1, "Detect %d at range %f and abs vel %f ", i, r(this_range_idx), v_target_abs);
+    
+
+    fprintf(1, "Found angle of %f deg\n", angle_deg)
     detected_targets(i,1) = r(this_range_idx);
     detected_targets(i,2) = sp(this_vel_idx);
-    detected_targets(i,3) = 180/pi*ktheta(max_angle_idx);
+    detected_targets(i,3) = angle_deg;
 end
 
+truth_tartget = zeros(1, 3);
+
 %% Generate PCM using detected_targets and truth_targets
+
+
 % my_pcm(truth_targets, detected_targets);
