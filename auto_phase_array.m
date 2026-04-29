@@ -41,6 +41,15 @@ target_dist = [43 50]; % meters         % TODO: what should be targets be?
 target_speed = [-80 96]*1000/3600; % meters/sec (note, simulation also sets radar to have a speed)
 target_az = [-10 10]; % Azimuth angle in degrees
 target_rcs = [20 40]; % radar cross section
+
+%% Final target setup?
+% 4 targets. 1 pair to check range resolution, 1 pair to check angle resolution
+% How difficult is this?
+% target_dist = [62 64 31 31];
+% target_speed = [-80 -80 96 96]*1000/3600;
+% target_az = [-25 -30 15.203 17.840];
+% target_rcs = [15 10 10 10];
+
 target_pos = [target_dist.*cosd(target_az); target_dist.*sind(target_az); 0.5 0.5];
 target = phased.RadarTarget('MeanRCS', target_rcs, 'PropagationSpeed', c, 'OperatingFrequency', fc);
 target_motion = phased.Platform('InitialPosition', target_pos, 'Velocity', [target_speed; 0 0; 0 0]);
@@ -189,6 +198,7 @@ Tscale = 3.5;
 num_dets = size(detects, 1);
 detected_targets = zeros(num_dets,3);
 fprintf(1, "Detected %d range/vel combinations\n", num_dets);
+% FIXME: I assumed the Angle range was -PI to PI, but the actual range might be smaller. How do we know?
 ktheta = [(0:Nt*Nr/2-1) -Nt*Nr/2:-1]/(Nt*Nr)*2*pi; % Angle of each index in Pi
 for i = 1:num_dets
     this_range_idx = detects(i,1);
