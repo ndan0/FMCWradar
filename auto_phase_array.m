@@ -59,8 +59,8 @@ tx_gain = 9+ant_gain; % dB
 rx_gain = 15+ant_gain; % dB
 rx_nf = 4.5; % dB
 
-Nt = 9; % num tx        % TODO: should we implement the 9x16 array in the paper?
-Nr = 16; % num rx
+Nt = 4; % num tx        % TODO: should we implement the 9x16 array in the paper?
+Nr = 8; % num rx
 
 dt = Nr*lambda/2; % meters, tx spacing (half wavelength)
 dr = lambda/2; % meters, rx spacing
@@ -223,7 +223,7 @@ for i = 1:num_dets
     angle_deg = rad2deg(angle_rad);
     
     v_rel = sp(this_vel_idx);
-    v_target_abs = (v_rel + radar_speed * cos(angle_rad)) / cos(angle_rad);
+    v_target_abs = v_rel + radar_speed;
     fprintf(1, "Detect %d at range %f and abs vel %f ", i, r(this_range_idx), v_target_abs);
     
 
