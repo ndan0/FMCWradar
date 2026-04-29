@@ -3,10 +3,14 @@ Documenting the paper requirements in steps/chunks.
 1. Simulating a data set:
     - generate a truth pulse, send as a chirp train
     - set target(s) position/velocity
+        - want targets that test the angle and range resolution of the system
+        - 2 targets with same range but different angles
     - simulate receiver data
     - synthesize virtual receiver antennas (can we simulate these directly?)
     https://www.mathworks.com/help/phased/ug/increasing-angular-resolution-with-mimo-radars.html
     https://www.mathworks.com/help/radar/ug/automotive-adaptive-cruise-control-using-fmcw-technology.html
+
+    - Figure out how to increase the number of tx and form the data cube
 
 2. Generate 2D range-Doppler Map (this may be covered by the Matlab tutorial above)
     - mix received signals into IF for each Rx
@@ -19,8 +23,11 @@ Documenting the paper requirements in steps/chunks.
     - Determine threshold T
     - Produce indices [kv, kr] of detects
     https://ieeexplore.ieee.org/document/7411913
+    - determine window size
+    - parameters are dependent on tx rx parameters i think
 
 4. Estimate AOA for each detect
     - Does this only give us angle in the horizontal dimension?
+    - what if there are multiple angles? do we need a peak picking algorithm?
 
 5. Generate PCM using AOA, Range, and Velocity
