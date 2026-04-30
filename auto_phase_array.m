@@ -137,11 +137,11 @@ end
 %% Virtual Array processing
 xr1 = xr(:,:,1:Nt:end); % taking every other page to recover the measurements corresponding to the two transmit antenna elements
 xr2 = xr(:,:,2:Nt:end); % When Nt > 2, we still toggle 1 receiver per sweep
-%xr3 = xr(:,:,3:Nt:end); % Note: Need to go up to xr<Nt>
-%xr4 = xr(:,:,4:Nt:end);
+xr3 = xr(:,:,3:Nt:end); % Note: Need to go up to xr<Nt>
+xr4 = xr(:,:,4:Nt:end);
 
-xrv = cat(2,xr1, xr2);
-%xrv = cat(2,xr1, xr2, xr3, xr4); % Xrv size is [num range bins (positive only), num virtual rx, num vel bins];
+%xrv = cat(2,xr1, xr2);
+xrv = cat(2,xr1, xr2, xr3, xr4); % Xrv size is [num range bins (positive only), num virtual rx, num vel bins];
 
 %% Range and Doppler Estimation
 nfft_r = 2^nextpow2(size(xrv,1));
