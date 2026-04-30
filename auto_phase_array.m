@@ -233,9 +233,71 @@ for i = 1:num_dets
     detected_targets(i,3) = angle_deg;
 end
 
-truth_tartget = zeros(1, 3);
+% --- PCM Visualization ---
+num_truths = size(truth_targets, 1);
+% [Range, CrossRange]
+pcm_dots = zeros(num_truths + num_dets, 2);
 
-%% Generate PCM using detected_targets and truth_targets
+for i = 1:num_truths
+    pcm_dots(i, 1) = target_dist(i);
+    pcm_dots(i, 2) = target_dist(i) * sin(deg2rad(target_ang(i)));
+end
+
+for i = 1:num_dets
+    pcm_dots(i + num_truths, 1) = detected_targets(i, 1);
+    pcm_dots(i + num_truths, 2) = detected_targets(i, 1) * sin(deg2rad(detected_targets(i,3)));
+end
+
+pcm_dots = fliplr(pcm_dots);
+
+% Prepare figure
+fig = figure('Name','PCM Plot','NumberTitle','off');
+ax = axes(fig); 
+axis(ax, 'equal');
+hold(ax, 'on');
+
+% Colors and marker styles
+truthMarkers = {'o','s','d','^','v','>','<','p','h'}; 
+truthColor = [0 0.4470 0.7410]; 
+
+% Initialize legend containers
+legHandles = []; % Using an empty array for easier concatenation
+legEntries = {};
+
+numTruthsToPlot = min(num_truths, size(pcm_dots,1));
+
+for k = 1:numTruthsToPlot
+    m = truthMarkers{mod(k-1,numel(truthMarkers))+1};
+    
+    % Plot the point
+    h = plot(ax, pcm_dots(k,1), pcm_dots(k,2), 'Marker', m, 'MarkerSize',8, ...
+        'MarkerFaceColor', truthColor, 'LineStyle','none', 'Color', truthColor);
+
+    % --- UPDATE FOR LEGEND ---
+    % Store the handle for every point to make it unique in the legend
+    legHandles(end+1) = h; 
+    legEntries{end+1} = ['Truth ', num2str(k)]; 
+end
 
 
-% my_pcm(truth_targets, detected_targets);
+% Plot detected dots (the rest) with a single style and one legend entry
+if num_truths < size(pcm_dots,1)
+    detIdx = (num_truths+1):size(pcm_dots,1);
+    hDet = plot(ax, pcm_dots(detIdx,1), pcm_dots(detIdx,2), 'd', 'MarkerSize',8, ...
+        'Color', detColor, 'LineWidth',1.5);
+    legHandles(end+1) = hDet;
+    legEntries{end+1} = 'Detected dots';
+end
+
+% Finalize plot
+xlabel(ax,'Cross-range (meters)');
+ylabel(ax,'Range (meters)');
+title(ax,'Truth and Detected Dots');
+
+% Only pass valid handles to legend
+valid = isgraphics(legHandles);
+if any(valid)
+    legend(ax, legHandles(valid), legEntries(valid), 'Location','best');
+end
+
+hold(ax, 'off');
