@@ -272,6 +272,7 @@ hold(ax, 'on');
 
 % Colors and marker styles
 truthColor = [0 0.4470 0.7410]; 
+detColor = [.85 0 0];
 
 % Initialize legend containers
 legHandles = []; % Using an empty array for easier concatenation
