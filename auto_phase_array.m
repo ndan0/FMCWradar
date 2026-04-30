@@ -8,7 +8,7 @@ lambda = c/fc; % meters, wavelength of signal
 
 % TODO: what should our max range and res be?
 range_max = 200; % meters, depends on situation. 200m is for cruise control driving situation.
-T = 5.5*range2time(range_max,c); % sec, sweep time. scale should be between 5-6x
+T = 5*range2time(range_max,c); % sec, sweep time. scale should be between 5-6x
 % T = 5.5*range_max*c/2;
 
 range_res = 1; % meters, desired range resolution. 1 for cruise control driving situation.
@@ -37,7 +37,7 @@ if (debug_plot)
 end
 
 %% Setup target
-target_dist = [43 50]; % meters         % TODO: what should be targets be?
+target_dist = [20 50]; % meters         % TODO: what should be targets be?
 target_speed = [-80 96]*1000/3600; % meters/sec (note, simulation also sets radar to have a speed)
 target_az = [-10 10]; % Azimuth angle in degrees
 target_rcs = [20 40]; % radar cross section
@@ -57,7 +57,8 @@ target_motion = phased.Platform('InitialPosition', target_pos, 'Velocity', [targ
 channel = phased.FreeSpace('PropagationSpeed', c, 'OperatingFrequency', fc, 'SampleRate', fs, 'TwoWayPropagation', true);
 
 for i = 1:length(target_dist)
-    fprintf(1, "Target %d at range %f, abs vel %f, relative az %f degrees, rcs %f\n", i, target_dist(i), target_speed(i), target_az(i), target_rcs(i));
+    fprintf(1, "Target %d at range %f, abs vel %f, relative az %f degrees, rcs %f\n", ...
+        i, target_dist(i), target_speed(i), target_az(i), target_rcs(i));
 end
 %% Setup Radar System
 ant_aperture = 6.06e-4; % square meters
@@ -67,8 +68,8 @@ tx_gain = 9+ant_gain; % dB
 rx_gain = 15+ant_gain; % dB
 rx_nf = 4.5; % dB
 
-Nt = 2; % num tx        % TODO: should we implement the 9x16 array in the paper?
-Nr = 4; % num rx
+Nt = 4; % num tx        % TODO: should we implement the 9x16 array in the paper?
+Nr = 8; % num rx
 
 dt = Nr*lambda/2; % meters, tx spacing (half wavelength)
 dr = lambda/2; % meters, rx spacing
@@ -145,11 +146,11 @@ end
 %% Virtual Array processing
 xr1 = xr(:,:,1:Nt:end); % taking every other page to recover the measurements corresponding to the two transmit antenna elements
 xr2 = xr(:,:,2:Nt:end); % When Nt > 2, we still toggle 1 receiver per sweep
-%xr3 = xr(:,:,3:Nt:end); % Note: Need to go up to xr<Nt>
-%xr4 = xr(:,:,4:Nt:end);
+xr3 = xr(:,:,3:Nt:end); % Note: Need to go up to xr<Nt>
+xr4 = xr(:,:,4:Nt:end);
 
-xrv = cat(2,xr1, xr2);
-%xrv = cat(2,xr1, xr2, xr3, xr4); % Xrv size is [num range bins (positive only), num virtual rx, num vel bins];
+%xrv = cat(2,xr1, xr2);
+xrv = cat(2,xr1, xr2, xr3, xr4); % Xrv size is [num range bins (positive only), num virtual rx, num vel bins];
 
 %% Range and Doppler Estimation
 nfft_r = 2^nextpow2(size(xrv,1));
@@ -195,6 +196,7 @@ Tscale = 3.5;
 
 
 %% Determine AOA of detects
+Nrx = Nt * Nr; % Total number of virtual channels
 num_dets = size(detects, 1);
 detected_targets = zeros(num_dets,3);
 fprintf(1, "Detected %d range/vel combinations\n", num_dets);
@@ -203,21 +205,109 @@ ktheta = [(0:Nt*Nr/2-1) -Nt*Nr/2:-1]/(Nt*Nr)*2*pi; % Angle of each index in Pi
 for i = 1:num_dets
     this_range_idx = detects(i,1);
     this_vel_idx = detects(i,2);
-    fprintf(1, "Detect %d at range %f and relative vel %f\n", i, r(this_range_idx), sp(this_vel_idx));
-    
+
     % Extract sequence Y
     Y = resp(nfft_r/2 + this_range_idx,:,this_vel_idx); % Range-doppler map values for this detect at each virtual receiver
     
     % Use DFT to determine angle information
-    Pi = fft(Y);
-    % How to determine the angle?
-    [~, max_angle_idx] = max(Pi);
-    fprintf(1, "Found angle of %f\n", 180/pi*ktheta(max_angle_idx))
+    Pi = fft(Y, Nrx);
+    [~, max_angle_idx] = max(abs(Pi));
 
+    if max_angle_idx > Nrx/2
+        k_norm = (max_angle_idx - 1 - Nrx) / Nrx;
+    else
+        k_norm = (max_angle_idx - 1) / Nrx;
+    end
+
+    %Flip the sign
+    k_norm = -k_norm;
+
+    % Calculate Angle using the Inverse Sine
+    % Formula: theta = asin( f_theta * lambda / dr )
+    % Since k_norm represents (d/lambda * sin(theta)), we divide by (d/lambda)
+    val_to_asin = k_norm / (dr / lambda);
+
+    val_to_asin = max(min(val_to_asin, 1), -1); 
+
+    angle_rad = asin(val_to_asin);
+    angle_deg = rad2deg(angle_rad);
+    
+    v_rel = sp(this_vel_idx);
+    v_target_abs = v_rel + radar_speed;
+    fprintf(1, "Detect %d at range %f and abs vel %f ", i, r(this_range_idx), v_target_abs);
+    
+
+    fprintf(1, "Found angle of %f deg\n", angle_deg)
     detected_targets(i,1) = r(this_range_idx);
     detected_targets(i,2) = sp(this_vel_idx);
-    detected_targets(i,3) = 180/pi*ktheta(max_angle_idx);
+    detected_targets(i,3) = angle_deg;
 end
 
-%% Generate PCM using detected_targets and truth_targets
-% my_pcm(truth_targets, detected_targets);
+% --- PCM Visualization ---
+num_truths = size(truth_targets, 1);
+% [Range, CrossRange]
+pcm_dots = zeros(num_truths + num_dets, 2);
+
+for i = 1:num_truths
+    pcm_dots(i, 1) = target_dist(i);
+    pcm_dots(i, 2) = target_dist(i) * sin(deg2rad(target_ang(i)));
+end
+
+for i = 1:num_dets
+    pcm_dots(i + num_truths, 1) = detected_targets(i, 1);
+    pcm_dots(i + num_truths, 2) = detected_targets(i, 1) * sin(deg2rad(detected_targets(i,3)));
+end
+
+pcm_dots = fliplr(pcm_dots);
+
+% Prepare figure
+fig = figure('Name','PCM Plot','NumberTitle','off');
+ax = axes(fig); 
+axis(ax, 'equal');
+hold(ax, 'on');
+
+% Colors and marker styles
+truthMarkers = {'o','s','d','^','v','>','<','p','h'}; 
+truthColor = [0 0.4470 0.7410]; 
+
+% Initialize legend containers
+legHandles = []; % Using an empty array for easier concatenation
+legEntries = {};
+
+numTruthsToPlot = min(num_truths, size(pcm_dots,1));
+
+for k = 1:numTruthsToPlot
+    m = truthMarkers{mod(k-1,numel(truthMarkers))+1};
+    
+    % Plot the point
+    h = plot(ax, pcm_dots(k,1), pcm_dots(k,2), 'Marker', m, 'MarkerSize',8, ...
+        'MarkerFaceColor', truthColor, 'LineStyle','none', 'Color', truthColor);
+
+    % --- UPDATE FOR LEGEND ---
+    % Store the handle for every point to make it unique in the legend
+    legHandles(end+1) = h; 
+    legEntries{end+1} = ['Truth ', num2str(k)]; 
+end
+
+
+% Plot detected dots (the rest) with a single style and one legend entry
+if num_truths < size(pcm_dots,1)
+    detIdx = (num_truths+1):size(pcm_dots,1);
+    hDet = plot(ax, pcm_dots(detIdx,1), pcm_dots(detIdx,2), 'd', 'MarkerSize',8, ...
+        'Color', detColor, 'LineWidth',1.5);
+    legHandles(end+1) = hDet;
+    legEntries{end+1} = 'Detected dots';
+end
+
+% Finalize plot
+xlabel(ax,'Cross-range (meters)');
+ylabel(ax,'Range (meters)');
+title(ax,'Truth and Detected Dots');
+
+% Only pass valid handles to legend
+valid = isgraphics(legHandles);
+if any(valid)
+    legend(ax, legHandles(valid), legEntries(valid), 'Location','best');
+end
+
+hold(ax, 'off');
