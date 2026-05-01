@@ -234,7 +234,7 @@ for i = 1:num_dets
     
     v_rel = sp(this_vel_idx);
     v_target_abs = v_rel + radar_speed;
-    fprintf(1, "Detect %d at range %f and abs vel %f ", i, r(this_range_idx), v_target_abs);
+    fprintf(1, "Detect %d at range %f and rel vel %f ", i, r(this_range_idx), v_rel);
     
 
     fprintf(1, "Found angle of %f deg\n", angle_deg)
@@ -245,20 +245,24 @@ end
 
 % --- PCM Visualization ---
 num_truths = size(truth_targets, 1);
-% [Range, CrossRange]
+% [Range, CrossRange, Rel Vel]
 pcm_dots = zeros(num_truths + num_dets, 2);
 
 for i = 1:num_truths
     pcm_dots(i, 1) = target_dist(i);
-    pcm_dots(i, 2) = target_dist(i) * sin(deg2rad(target_ang(i)));
+    pcm_dots(i, 2) = target_dist(i) * sin(deg2rad(target_az(i)));
+    pcm_dots(i, 3) = target_speed(i);
 end
 
 for i = 1:num_dets
     pcm_dots(i + num_truths, 1) = detected_targets(i, 1);
     pcm_dots(i + num_truths, 2) = detected_targets(i, 1) * sin(deg2rad(detected_targets(i,3)));
+    pcm_dots(i + num_truths, 3) = detected_targets(i, 2);
 end
 
-pcm_dots = fliplr(pcm_dots);
+%Swap X and Y
+% [Cross Range, Range, Rel Vel]
+pcm_dots(:, [1, 2]) = pcm_dots(:, [2, 1]);
 
 % Prepare figure
 fig = figure('Name','PCM Plot','NumberTitle','off');
@@ -267,47 +271,97 @@ axis(ax, 'equal');
 hold(ax, 'on');
 
 % Colors and marker styles
-truthMarkers = {'o','s','d','^','v','>','<','p','h'}; 
 truthColor = [0 0.4470 0.7410]; 
+detColor = [.85 0 0];
 
 % Initialize legend containers
 legHandles = []; % Using an empty array for easier concatenation
 legEntries = {};
 
+% --- TRUTH DOTS & ARROWS ---
 numTruthsToPlot = min(num_truths, size(pcm_dots,1));
+detIdx = 1:numTruthsToPlot; % Use numTruthsToPlot for safety
 
-for k = 1:numTruthsToPlot
-    m = truthMarkers{mod(k-1,numel(truthMarkers))+1};
-    
-    % Plot the point
-    h = plot(ax, pcm_dots(k,1), pcm_dots(k,2), 'Marker', m, 'MarkerSize',8, ...
-        'MarkerFaceColor', truthColor, 'LineStyle','none', 'Color', truthColor);
+dots_x = pcm_dots(detIdx, 1);
+dots_y = pcm_dots(detIdx, 2);
+v_rels = pcm_dots(detIdx, 3);
 
-    % --- UPDATE FOR LEGEND ---
-    % Store the handle for every point to make it unique in the legend
-    legHandles(end+1) = h; 
-    legEntries{end+1} = ['Truth ', num2str(k)]; 
+% 1. Calculate Truth Arrows (pointing toward/away from origin)
+u_unit = dots_x;
+v_unit = dots_y;
+magnitudes = sqrt(u_unit.^2 + v_unit.^2);
+magnitudes(magnitudes == 0) = 1; 
+
+u_unit = u_unit ./ magnitudes;
+v_unit = v_unit ./ magnitudes;
+scale_factor = 0.5;
+u_vel = u_unit .* v_rels * scale_factor;
+v_vel = v_unit .* v_rels * scale_factor;
+
+hArrow2 = quiver(ax, dots_x, dots_y, u_vel, v_vel, 0, ...
+       'MaxHeadSize', 0.5, 'Color', truthColor, 'LineWidth', 1.2);
+
+
+h = plot(ax, dots_x, dots_y, 'Marker', 'o', 'MarkerSize', 8, ...
+    'MarkerFaceColor', truthColor, 'LineStyle', 'none', 'Color', truthColor);
+
+% Add Text Labels for Truth
+for k = 1:length(dots_x)
+    tip_x = dots_x(k) + u_vel(k);
+    tip_y = dots_y(k) + v_vel(k);
+    label = sprintf('%.1f m/s', v_rels(k));
+    text(ax, tip_x, tip_y, label, 'FontSize', 9, 'FontWeight', 'bold');
 end
 
+legHandles(end+1) = h; 
+legEntries{end+1} = 'Truth'; 
 
-% Plot detected dots (the rest) with a single style and one legend entry
+% --- DETECTED DOTS & ARROWS ---
 if num_truths < size(pcm_dots,1)
     detIdx = (num_truths+1):size(pcm_dots,1);
-    hDet = plot(ax, pcm_dots(detIdx,1), pcm_dots(detIdx,2), 'd', 'MarkerSize',8, ...
-        'Color', detColor, 'LineWidth',1.5);
+    
+    dots_x = pcm_dots(detIdx, 1);
+    dots_y = pcm_dots(detIdx, 2);
+    v_rels = pcm_dots(detIdx, 3);
+    
+    u_unit = dots_x;
+    v_unit = dots_y;
+    magnitudes = sqrt(u_unit.^2 + v_unit.^2);
+    magnitudes(magnitudes == 0) = 1; 
+    
+    u_unit = u_unit ./ magnitudes;
+    v_unit = v_unit ./ magnitudes;
+    u_vel = u_unit .* v_rels * scale_factor;
+    v_vel = v_unit .* v_rels * scale_factor;
+    
+    % Draw Detected arrows and capture handle for legend
+    hArrow = quiver(ax, dots_x, dots_y, u_vel, v_vel, 0, ...
+           'MaxHeadSize', 0.5, 'Color', [1 0 0], 'LineWidth', 1.5);
+    
+    % Draw Detected dots
+    hDet = plot(ax, dots_x, dots_y, 'd', 'MarkerSize', 10, ...
+        'MarkerFaceColor', detColor, 'Color', 'k', 'LineWidth', 1.5);
+    
     legHandles(end+1) = hDet;
-    legEntries{end+1} = 'Detected dots';
+    legEntries{end+1} = 'Detected';
+    
+    % Add Text Labels for Detected
+    for k = 1:length(dots_x)
+        tip_x = dots_x(k) + u_vel(k);
+        tip_y = dots_y(k) + v_vel(k);
+        label = sprintf('%.1f m/s', v_rels(k));
+        text(ax, tip_x, tip_y, label, 'FontSize', 9, 'FontWeight', 'bold');
+    end
 end
 
 % Finalize plot
 xlabel(ax,'Cross-range (meters)');
 ylabel(ax,'Range (meters)');
+grid(ax, 'on');
 title(ax,'Truth and Detected Dots');
 
-% Only pass valid handles to legend
 valid = isgraphics(legHandles);
 if any(valid)
     legend(ax, legHandles(valid), legEntries(valid), 'Location','best');
 end
-
 hold(ax, 'off');
