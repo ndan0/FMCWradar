@@ -1,4 +1,21 @@
-% This script will borrow the info from https://www.mathworks.com/help/radar/ug/automotive-adaptive-cruise-control-using-fmcw-technology.html
+%% User parameters
+
+% Final target setup
+% 4 targets. 1 pair to check range resolution, 1 pair to check angle resolution
+% How difficult is this?
+target_dist = [44 42 31 60]; % meters
+target_speed = [105.4724 90.24 109.84 92.0190]*1000/3600; % m/s converted to km/hr
+target_az = [-25.35 -26.12 13.203 16.640]; % degrees. negative values are to the "left" of center
+target_rcs = [20 20 20 20];
+
+radar_speed = 100*1000/3600; % meters/sec, assuming radar is also in motion
+
+% target_dist = [20 50]; % meters         % TODO: what should be targets be?
+% target_speed = [99 96]*1000/3600; % meters/sec (note, simulation also sets radar to have a speed)
+% target_az = [-15.029342 63.2709384]; % Azimuth angle in degrees
+% target_rcs = [20 40]; % radar cross section
+
+%% This script will borrow the info from https://www.mathworks.com/help/radar/ug/automotive-adaptive-cruise-control-using-fmcw-technology.html
 % to create a phase array.
 debug_plot = 0;
 
@@ -35,20 +52,6 @@ if (debug_plot)
     subplot(212); spectrogram(sig,32,16,32,fs,'yaxis');
     title('FMCW signal spectrogram');
 end
-
-%% Setup target
-% target_dist = [20 50]; % meters         % TODO: what should be targets be?
-% target_speed = [99 96]*1000/3600; % meters/sec (note, simulation also sets radar to have a speed)
-% target_az = [-15.029342 63.2709384]; % Azimuth angle in degrees
-% target_rcs = [20 40]; % radar cross section
-
-%% Final target setup?
-% 4 targets. 1 pair to check range resolution, 1 pair to check angle resolution
-% How difficult is this?
-target_dist = [44 42 31 60];
-target_speed = [105.4724 90.24 109.84 92.0190]*1000/3600;
-target_az = [-25.35 -26.12 13.203 16.640];
-target_rcs = [20 20 20 20];
 
 target_pos = [target_dist.*cosd(target_az); target_dist.*sind(target_az); 0.5*ones(1,length(target_dist))];
 target = phased.RadarTarget('MeanRCS', target_rcs, 'PropagationSpeed', c, 'OperatingFrequency', fc);
@@ -87,7 +90,6 @@ receiver = phased.ReceiverPreamp('Gain', rx_gain, 'NoiseFigure', rx_nf, 'SampleR
 txradiator = phased.Radiator('Sensor', txarray, 'OperatingFrequency', fc, 'PropagationSpeed', c, 'WeightsInputPort', true);
 rxcollector = phased.Collector('Sensor', rxarray, 'OperatingFrequency', fc, 'PropagationSpeed', c);
 
-radar_speed = 100*1000/3600; % meters/sec, assuming radar is also in motion
 radar_speed_msec = radar_speed*3.6;
 radarmotion = phased.Platform('InitialPosition', [0;0;0.5], 'Velocity', [radar_speed;0;0]);
 
