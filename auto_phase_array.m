@@ -37,28 +37,28 @@ if (debug_plot)
 end
 
 %% Setup target
-target_dist = [20 50]; % meters         % TODO: what should be targets be?
-target_speed = [-80 96]*1000/3600; % meters/sec (note, simulation also sets radar to have a speed)
-target_az = [-10 10]; % Azimuth angle in degrees
-target_rcs = [20 40]; % radar cross section
+% target_dist = [20 50]; % meters         % TODO: what should be targets be?
+% target_speed = [99 96]*1000/3600; % meters/sec (note, simulation also sets radar to have a speed)
+% target_az = [-15.029342 63.2709384]; % Azimuth angle in degrees
+% target_rcs = [20 40]; % radar cross section
 
 %% Final target setup?
 % 4 targets. 1 pair to check range resolution, 1 pair to check angle resolution
 % How difficult is this?
-% target_dist = [62 64 31 31];
-% target_speed = [-80 -80 96 96]*1000/3600;
-% target_az = [-25 -30 15.203 17.840];
-% target_rcs = [15 10 10 10];
+target_dist = [44 42 31 60];
+target_speed = [105.4724 90.24 109.84 92.0190]*1000/3600;
+target_az = [-25.35 -26.12 13.203 16.640];
+target_rcs = [20 20 20 20];
 
-target_pos = [target_dist.*cosd(target_az); target_dist.*sind(target_az); 0.5 0.5];
+target_pos = [target_dist.*cosd(target_az); target_dist.*sind(target_az); 0.5*ones(1,length(target_dist))];
 target = phased.RadarTarget('MeanRCS', target_rcs, 'PropagationSpeed', c, 'OperatingFrequency', fc);
-target_motion = phased.Platform('InitialPosition', target_pos, 'Velocity', [target_speed; 0 0; 0 0]);
+target_motion = phased.Platform('InitialPosition', target_pos, 'Velocity', [target_speed; zeros(1, length(target_dist)); zeros(1, length(target_dist))]);
 
 channel = phased.FreeSpace('PropagationSpeed', c, 'OperatingFrequency', fc, 'SampleRate', fs, 'TwoWayPropagation', true);
 
 for i = 1:length(target_dist)
-    fprintf(1, "Target %d at range %f, abs vel %f, relative az %f degrees, rcs %f\n", ...
-        i, target_dist(i), target_speed(i), target_az(i), target_rcs(i));
+    fprintf(1, "Target %d at range %f m, abs vel %f m/s, relative az %f degrees, rcs %f\n", ...
+        i, target_dist(i), target_speed(i)*3.6, target_az(i), target_rcs(i));
 end
 %% Setup Radar System
 ant_aperture = 6.06e-4; % square meters
@@ -76,7 +76,10 @@ dr = lambda/2; % meters, rx spacing
 
 txarray = phased.ULA(Nt, dt);
 rxarray = phased.ULA(Nr, dr);
-%varray = phased.ULTA(Nt*Nr, dr); % The physical representation of the virtual array
+varray = phased.ULA(Nt*Nr, dr); % The physical representation of the virtual array
+% viewArray(txarray,'ShowTaper',true,'ShowIndex','All');
+% viewArray(rxarray,'ShowTaper',true,'ShowIndex','All');
+% viewArray(varray, 'ShowTaper',true,'ShowIndex','All');
 
 transmitter = phased.Transmitter('PeakPower', tx_ppower, 'Gain', tx_gain);
 receiver = phased.ReceiverPreamp('Gain', rx_gain, 'NoiseFigure', rx_nf, 'SampleRate', fs);
@@ -85,9 +88,10 @@ txradiator = phased.Radiator('Sensor', txarray, 'OperatingFrequency', fc, 'Propa
 rxcollector = phased.Collector('Sensor', rxarray, 'OperatingFrequency', fc, 'PropagationSpeed', c);
 
 radar_speed = 100*1000/3600; % meters/sec, assuming radar is also in motion
+radar_speed_msec = radar_speed*3.6;
 radarmotion = phased.Platform('InitialPosition', [0;0;0.5], 'Velocity', [radar_speed;0;0]);
 
-fprintf(1, "Radar with %d Tx, %d Rx, %d Virtual, abs vel %f\n", Nt, Nr, Nt*Nr, radar_speed);
+fprintf(1, "Radar with %d Tx, %d Rx, %d Virtual, abs vel %f m/s\n", Nt, Nr, Nt*Nr, radar_speed_msec);
 % Generate "Truth" target matrix
 truth_targets = [target_dist.' (radar_speed - target_speed).' target_az.'];
 
@@ -148,10 +152,15 @@ xr1 = xr(:,:,1:Nt:end); % taking every other page to recover the measurements co
 xr2 = xr(:,:,2:Nt:end); % When Nt > 2, we still toggle 1 receiver per sweep
 xr3 = xr(:,:,3:Nt:end); % Note: Need to go up to xr<Nt>
 xr4 = xr(:,:,4:Nt:end);
+% xr5 = xr(:,:,5:Nt:end);
+% xr6 = xr(:,:,6:Nt:end);
+% xr7 = xr(:,:,7:Nt:end);
+% xr8 = xr(:,:,8:Nt:end);
+% xr9 = xr(:,:,9:Nt:end);
 
 %xrv = cat(2,xr1, xr2);
 xrv = cat(2,xr1, xr2, xr3, xr4); % Xrv size is [num range bins (positive only), num virtual rx, num vel bins];
-
+%xrv = cat(2,xr1, xr2, xr3, xr4, xr5, xr6); %xr7, xr8, xr9);
 %% Range and Doppler Estimation
 nfft_r = 2^nextpow2(size(xrv,1));
 nfft_d = 2^nextpow2(size(xrv,3));
@@ -179,19 +188,20 @@ mag_resp = abs(resp(nfft_r/2+1:end, :,:)).^2; % Dump the negative range bins, su
 Z = reshape(sum(mag_resp, 2), [nfft_r/2, nfft_d]);
 r = r(nfft_r/2+1:end); % Dumped negative range bins, is now positive range values of bins of Z
 
-% colormap('winter');
-% figure(), imagesc(sp, r, Z);
-% colorbar;
-% title('Magnitude of response');
-% xlabel('velocity (m/s)');
-% ylabel('range (m)');
+if (debug_plot)
+imagesc(sp, r, Umap);
+colorbar;
+title('BNE Umap');
+xlabel('velocity (m/s)');
+ylabel('range (m)');
+end
 
 %% Detection
 %Pfa = 0.001;
 window = [5, 3]; % CHECKME: what size? the resolution of resp bins is not the same as our input range_res from the start. (it's closer to half of range_res)
                  % If we window 5 range bins, do we actually have 1 m resolution?
 %detects = cfar_detection(Z, Pfa, window); % Deprecated cfar detector function
-Tscale = 3.5;
+Tscale = 4.0;
 [detects, detMask, Umap, Smap] = cfar_detection_paper(Z, Tscale, window);
 
 
@@ -202,13 +212,24 @@ detected_targets = zeros(num_dets,3);
 fprintf(1, "Detected %d range/vel combinations\n", num_dets);
 % FIXME: I assumed the Angle range was -PI to PI, but the actual range might be smaller. How do we know?
 ktheta = [(0:Nt*Nr/2-1) -Nt*Nr/2:-1]/(Nt*Nr)*2*pi; % Angle of each index in Pi
+
+musicEstimator = phased.MUSICEstimator('SensorArray', varray, ...
+                    OperatingFrequency=fc,...
+                    DOAOutputPort=true,NumSignalsSource="Property",...
+                    NumSignals=num_dets); % NOTE: If we trust our CFAR to only find unique targets, we could use detected_targets here.
+[spectrum, doa] = musicEstimator(xrv);
+doa = broadside2az(sort(doa)) % zero elevation
+% this function seems to have the opposite sign for az as the radar equations, so negate the doas
+doa = -1*doa;
+plotSpectrum(musicEstimator,NormalizeResponse=true)
+
 for i = 1:num_dets
     this_range_idx = detects(i,1);
     this_vel_idx = detects(i,2);
 
     % Extract sequence Y
     Y = resp(nfft_r/2 + this_range_idx,:,this_vel_idx); % Range-doppler map values for this detect at each virtual receiver
-    
+
     % Use DFT to determine angle information
     Pi = fft(Y, Nrx);
     [~, max_angle_idx] = max(abs(Pi));
@@ -231,15 +252,18 @@ for i = 1:num_dets
 
     angle_rad = asin(val_to_asin);
     angle_deg = rad2deg(angle_rad);
+
+    % Use the results of MUSIC Estimator to find closest
+    [~, doa_index] = min(abs(angle_deg - doa));
     
     v_rel = sp(this_vel_idx);
-    v_target_abs = v_rel + radar_speed;
-    fprintf(1, "Detect %d at range %f and rel vel %f ", i, r(this_range_idx), v_rel);
+    v_target_abs = v_rel + radar_speed_msec;
+    fprintf(1, "Detect %d at range %f and rel vel %f m/s.", i, r(this_range_idx), v_rel);
     
 
-    fprintf(1, "Found angle of %f deg\n", angle_deg)
+    fprintf(1, " Found angle of %f deg. MUSIC found %f deg.\n", angle_deg, doa(doa_index));
     detected_targets(i,1) = r(this_range_idx);
-    detected_targets(i,2) = sp(this_vel_idx);
+    detected_targets(i,2) = v_rel;
     detected_targets(i,3) = angle_deg;
 end
 
@@ -251,7 +275,7 @@ pcm_dots = zeros(num_truths + num_dets, 2);
 for i = 1:num_truths
     pcm_dots(i, 1) = target_dist(i);
     pcm_dots(i, 2) = target_dist(i) * sin(deg2rad(target_az(i)));
-    pcm_dots(i, 3) = target_speed(i);
+    pcm_dots(i, 3) = target_speed(i)*3.6 - radar_speed_msec;
 end
 
 for i = 1:num_dets
@@ -309,7 +333,7 @@ h = plot(ax, dots_x, dots_y, 'Marker', 'o', 'MarkerSize', 8, ...
 for k = 1:length(dots_x)
     tip_x = dots_x(k) + u_vel(k);
     tip_y = dots_y(k) + v_vel(k);
-    label = sprintf('%.1f m/s', v_rels(k));
+    label = sprintf('%.1f m/s', abs(v_rels(k)));
     text(ax, tip_x, tip_y, label, 'FontSize', 9, 'FontWeight', 'bold');
 end
 
@@ -331,8 +355,8 @@ if num_truths < size(pcm_dots,1)
     
     u_unit = u_unit ./ magnitudes;
     v_unit = v_unit ./ magnitudes;
-    u_vel = u_unit .* v_rels * scale_factor;
-    v_vel = v_unit .* v_rels * scale_factor;
+    u_vel = u_unit .* -v_rels * scale_factor;
+    v_vel = v_unit .* -v_rels * scale_factor;
     
     % Draw Detected arrows and capture handle for legend
     hArrow = quiver(ax, dots_x, dots_y, u_vel, v_vel, 0, ...
@@ -349,7 +373,7 @@ if num_truths < size(pcm_dots,1)
     for k = 1:length(dots_x)
         tip_x = dots_x(k) + u_vel(k);
         tip_y = dots_y(k) + v_vel(k);
-        label = sprintf('%.1f m/s', v_rels(k));
+        label = sprintf('%.1f m/s', abs(v_rels(k)));
         text(ax, tip_x, tip_y, label, 'FontSize', 9, 'FontWeight', 'bold');
     end
 end
